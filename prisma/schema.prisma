@@ -1,0 +1,31 @@
+generator client {
+  provider     = "prisma-client-js"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum OrderStatus {
+  PENDING
+  SENT
+  RECEIVED
+}
+
+model Product {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  description String?
+  stock       Int      @default(0)
+  createdAt   DateTime @default(now())
+}
+
+model Order {
+  id               Int         @id @default(autoincrement())
+  customerName     String
+  items            Json
+  status           OrderStatus @default(PENDING)
+  verificationCode String?
+  createdAt        DateTime    @default(now())
+}
