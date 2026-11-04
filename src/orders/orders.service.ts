@@ -10,28 +10,12 @@ export class OrdersService {
   async create(createOrderDto: CreateOrderDto) {
     const { customerName, items } = createOrderDto;
 
-    const pendingOrder = await this.prisma.order.findFirst({
-      where: { customerName, status: OrderStatus.PENDING },
-    });
+    // 1. Validar que el cliente no tenga pedidos pendientes
+    await this.validateNoPendingOrder(customerName);
 
-    if (pendingOrder) {
-      throw new ConflictException('El cliente ya tiene un pedido en estado PENDING.');
-    }
-
+    // 2. Ejecutar la transacción para stock y creación del pedido
     return this.prisma.$transaction(async (tx) => {
-      for (const item of items) {
-        const product = await tx.product.findUnique({ where: { id: item.productId } });
-        if (!product) {
-          throw new NotFoundException(`El producto con ID ${item.productId} no existe.`);
-        }
-        if (product.stock < item.quantity) {
-          throw new BadRequestException(`Stock insuficiente para "${product.name}". Disponible: ${product.stock}, solicitado: ${item.quantity}`);
-        }
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { stock: product.stock - item.quantity },
-        });
-      }
+      await this.processItemsStock(tx, items);
 
       return tx.order.create({
         data: {
@@ -42,6 +26,37 @@ export class OrdersService {
       });
     });
   }
+
+
+  private async validateNoPendingOrder(customerName: string) {
+    const pendingOrder = await this.prisma.order.findFirst({
+      where: { customerName, status: OrderStatus.PENDING },
+    });
+
+    if (pendingOrder) {
+      throw new ConflictException('El cliente ya tiene un pedido en estado PENDING.');
+    }
+  }
+
+  private async processItemsStock(tx: any, items: any[]) {
+    for (const item of items) {
+      const product = await tx.product.findUnique({ where: { id: item.productId } });
+      
+      if (!product) {
+        throw new NotFoundException(`El producto con ID ${item.productId} no existe.`);
+      }
+      
+      if (product.stock < item.quantity) {
+        throw new BadRequestException(`Stock insuficiente para "${product.name}". Disponible: ${product.stock}, solicitado: ${item.quantity}`);
+      }
+      
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { stock: product.stock - item.quantity },
+      });
+    }
+  }
+
 
   async sendOrder(id: number) {
     const order = await this.prisma.order.findUnique({ where: { id } });
@@ -68,7 +83,9 @@ export class OrdersService {
     });
   }
 
-  async findAll() { return this.prisma.order.findMany(); }
+  async findAll() { 
+    return this.prisma.order.findMany(); 
+  }
   
   async findOne(id: number) {
     const order = await this.prisma.order.findUnique({ where: { id } });
